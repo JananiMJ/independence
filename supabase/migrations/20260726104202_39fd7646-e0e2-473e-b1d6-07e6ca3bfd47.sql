@@ -1,1 +1,0 @@
-DROP POLICY IF EXISTS "Service role can manage leads" ON public.leads;

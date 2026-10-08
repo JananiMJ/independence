@@ -1,55 +1,53 @@
 # Enable Independence — website
 
-React 19 + TanStack Start (server-side rendering) + Tailwind CSS + Supabase.
-Originally designed in Lovable, cleaned up for self-hosting.
+React 19 + TanStack Start (server-side rendering) + Tailwind CSS + MySQL.
+Originally designed in Lovable, cleaned up for self-hosting on Hostinger.
 
 ## Requirements
 
-- **Node.js 22 LTS** (Vite 8 needs Node 20.19+; 22 is recommended)
-- A Supabase project (stores enquiry-form leads and form analytics)
+- **Node.js 22 LTS**
+- A MySQL database (Hostinger) for enquiries and form analytics
+- An SMTP mailbox (info@enbl.com.au) to email each enquiry
 
 ## Run locally
 
 ```sh
 npm install
-cp .env.example .env   # then fill in your Supabase values
-npm run dev            # http://localhost:8080 (or the port Vite prints)
+cp .env.example .env   # then fill in your database + email values
+npm run dev
 ```
+
+Hostinger databases usually only accept connections from the server itself, so the
+enquiry form may not save locally unless **Remote MySQL** is enabled in hPanel.
 
 ## Project structure
 
 ```
 public/                    static files served as-is (favicon.png)
+database/schema.sql        MySQL tables — run once in phpMyAdmin
 src/
   assets/                  images imported by components
   components/LeadForm.tsx  enquiry form
   components/ui/           shadcn/ui components
-  integrations/supabase/   Supabase clients (browser + server)
-  lib/*.functions.ts       server functions (save lead, track/read analytics)
+  lib/*.functions.ts       server functions (save + email lead, track/read analytics)
+  lib/db.server.ts         MySQL connection
+  lib/mailer.server.ts     enquiry email (SMTP)
   routes/index.tsx         homepage  (/)
   routes/metrics.tsx       form metrics (/metrics, noindex)
   routes/__root.tsx        HTML shell, fonts, 404/error pages
-supabase/migrations/       database schema — run these on your Supabase project
 ```
 
 ## Database setup
 
-Run each file in `supabase/migrations/` **in filename order** in your Supabase
-project's SQL Editor (or `npx supabase db push` with the Supabase CLI). This creates
-the `leads` and `lead_events` tables and the `lead_event_summary` function.
+In hPanel create a MySQL database, open phpMyAdmin, select the database, and run
+`database/schema.sql` in the SQL tab. This creates the `leads` and `lead_events` tables.
 
-## Deploy (Vercel)
+Each enquiry is saved to `leads` **and** emailed to `MAIL_TO`. The visitor sees success
+if at least one of the two works.
 
-1. Push this folder to a GitHub repository.
-2. In Vercel: **Add New → Project → import the repo**. Framework preset: *Other*.
-   Build command `npm run build` (default) is fine.
-3. Under **Settings → Environment Variables**, add every variable from
-   `.env.example`, plus `NITRO_PRESET=vercel`.
-4. Deploy, then add your custom domain under **Settings → Domains**.
+## Deploy (Hostinger Web App)
 
-Other hosts: set `NITRO_PRESET` to `netlify`, `cloudflare-module` (the default),
-or `node-server` (output in `.output/`, start with `node .output/server/index.mjs`).
-
-> This is a server-rendered app, not a static site — uploading files to plain
-> shared hosting (cPanel / FTP) will **not** work, because the enquiry form runs
-> server code.
+- Source: this GitHub repo, branch `main`
+- Node.js 22, build command `npm run build`, output directory `.output`
+- Entry file: `server/index.mjs`
+- Environment variables: everything in `.env.example`

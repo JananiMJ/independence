@@ -15,20 +15,31 @@ export type LeadInput = z.infer<typeof leadSchema>;
 export const submitLead = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => leadSchema.parse(data))
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { getDb } = await import("@/lib/db.server");
+    const { sendLeadEmail } = await import("@/lib/mailer.server");
 
-    const { error } = await supabaseAdmin.from("leads").insert({
-      name: data.name,
-      email: data.email,
-      phone: data.phone || null,
-      role: data.role || null,
-      age_group: data.ageGroup || null,
-      message: data.message || null,
-      status: "new",
-    });
+    // Save to the database and email the team in parallel. The enquiry counts as
+    // received if at least one succeeds, so a mail or DB hiccup never loses a lead.
+    const [saved, emailed] = await Promise.allSettled([
+      getDb().execute(
+        `INSERT INTO leads (name, email, phone, role, age_group, message, status)
+         VALUES (?, ?, ?, ?, ?, ?, 'new')`,
+        [
+          data.name,
+          data.email,
+          data.phone || null,
+          data.role || null,
+          data.ageGroup || null,
+          data.message || null,
+        ],
+      ),
+      sendLeadEmail(data),
+    ]);
 
-    if (error) {
-      console.error("Failed to save lead:", error);
+    if (saved.status === "rejected") console.error("Failed to save lead:", saved.reason);
+    if (emailed.status === "rejected") console.error("Failed to email lead:", emailed.reason);
+
+    if (saved.status === "rejected" && emailed.status === "rejected") {
       throw new Error("Unable to submit your enquiry. Please try again or call us.");
     }
 

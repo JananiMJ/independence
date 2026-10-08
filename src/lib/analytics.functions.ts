@@ -9,34 +9,21 @@ const eventSchema = z.object({
 
 export type LeadEventInput = z.infer<typeof eventSchema>;
 
-type LooseClient = {
-  from: (table: string) => {
-    insert: (values: Record<string, unknown>) => Promise<{ error: { message: string } | null }>;
-  };
-  rpc: (
-    fn: string,
-    args: Record<string, unknown>,
-  ) => Promise<{ data: unknown; error: { message: string } | null }>;
-};
-
 export const trackLeadEvent = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => eventSchema.parse(data))
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const db = supabaseAdmin as unknown as LooseClient;
+    const { getDb } = await import("@/lib/db.server");
 
-    const { error } = await db.from("lead_events").insert({
-      event_type: data.eventType,
-      path: data.path || null,
-      referrer: data.referrer || null,
-    });
-
-    if (error) {
-      console.error("Failed to record lead event:", error.message);
+    try {
+      await getDb().execute(
+        "INSERT INTO lead_events (event_type, path, referrer) VALUES (?, ?, ?)",
+        [data.eventType, data.path || null, data.referrer || null],
+      );
+      return { success: true };
+    } catch (error) {
+      console.error("Failed to record lead event:", error);
       return { success: false };
     }
-
-    return { success: true };
   });
 
 export type LeadMetrics = {
@@ -60,19 +47,24 @@ export const getLeadMetrics = createServerFn({ method: "GET" }).handler(
       days,
     };
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const db = supabaseAdmin as unknown as LooseClient;
+    const { getDb } = await import("@/lib/db.server");
 
-    const { data, error } = await db.rpc("lead_event_summary", { _days: days });
-
-    if (error) {
-      console.error("Failed to load lead metrics:", error.message);
+    let row: { form_views: number; form_starts: number; form_submits: number } | undefined;
+    try {
+      const [rows] = await getDb().query(
+        `SELECT
+           SUM(event_type = 'form_view')   AS form_views,
+           SUM(event_type = 'form_start')  AS form_starts,
+           SUM(event_type = 'form_submit') AS form_submits
+         FROM lead_events
+         WHERE created_at >= NOW() - INTERVAL ? DAY`,
+        [days],
+      );
+      row = (rows as (typeof row)[])[0];
+    } catch (error) {
+      console.error("Failed to load lead metrics:", error);
       return empty;
     }
-
-    const row = (Array.isArray(data) ? data[0] : data) as
-      | { form_views: number; form_starts: number; form_submits: number }
-      | undefined;
 
     if (!row) return empty;
 

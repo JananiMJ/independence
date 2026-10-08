@@ -1,1 +1,0 @@
-DELETE FROM public.leads WHERE email = 'test@example.com' AND name = 'Test User' AND message = 'This is a test enquiry from Playwright.';
